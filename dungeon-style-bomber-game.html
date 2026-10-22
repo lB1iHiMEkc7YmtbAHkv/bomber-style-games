@@ -1,0 +1,1144 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>迷宮風ボンバー風ゲーム</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DotGothic16&family=M+PLUS+1p:wght@400;700&display=swap" rel="stylesheet">
+<style>
+/* Layout: 1画面ゲーム。左に一人称の迷宮ビュー＋マッピング、右に名簿とアイテム表。狭い画面では縦積み＋タッチパッド */
+:root{
+  color-scheme:dark;
+  --bg:#000000;
+  --panel:#0a0a10;
+  --line:#d8d8e0;
+  --dim:#3a3a48;
+  --fg:#ececf2;
+  --mute:#9a9aae;
+  --accent:#ffd84a;
+  --danger:#ff5a4a;
+  --display:'DotGothic16','Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif;
+  --body:'DotGothic16','M PLUS 1p','Hiragino Sans','Yu Gothic','Meiryo',sans-serif;
+  --mono:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;
+}
+html,body{height:100%}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1200px;margin:0 auto;padding-block:14px 24px;display:flex;flex-direction:column;gap:12px}
+header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px}
+h1{font-family:var(--display);font-weight:400;font-size:clamp(22px,4vw,30px);margin:0;letter-spacing:.06em;text-wrap:balance}
+h1 b{color:var(--accent);font-weight:400}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button,select,input{font:inherit}
+.btn{background:var(--panel);color:var(--fg);border:2px solid var(--dim);border-radius:2px;padding:6px 12px;cursor:pointer;font-size:14px}
+.btn:hover{border-color:var(--line)}
+.btn.primary{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.btn:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+select{background:var(--panel);color:var(--fg);border:2px solid var(--dim);border-radius:2px;padding:5px 8px;font-size:14px}
+.seedbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:13px;color:var(--mute)}
+.seedbar input{background:var(--panel);border:2px solid var(--dim);color:var(--fg);border-radius:2px;padding:5px 8px;width:24ch;max-width:100%;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.label{font-size:12px;letter-spacing:.08em;color:var(--mute)}
+.main{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:16px;align-items:start}
+@media (max-width:860px){.main{grid-template-columns:minmax(0,1fr)}}
+.stage{position:relative;display:flex;justify-content:center;min-width:0}
+canvas{display:block;touch-action:none;max-width:100%;outline:none;image-rendering:pixelated;image-rendering:crisp-edges}
+.overlay{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.72);overflow:auto;padding:12px}
+.card{background:var(--panel);border:4px double var(--line);padding:18px 20px;max-width:400px;display:flex;flex-direction:column;gap:12px}
+.card h2{font-family:var(--display);font-weight:400;font-size:26px;margin:0;letter-spacing:.04em}
+.card p{margin:0;line-height:1.7;color:var(--mute);font-size:14px}
+.card .row{display:flex;flex-wrap:wrap;gap:8px}
+kbd{font-family:var(--mono);font-size:12px;background:var(--bg);border:1px solid var(--dim);border-radius:2px;padding:1px 5px;color:var(--fg)}
+aside{display:flex;flex-direction:column;gap:14px;min-width:0}
+.box{background:var(--panel);border:4px double var(--line);padding:10px 12px;display:flex;flex-direction:column;gap:10px}
+.clock{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.clock .t{font-family:var(--display);font-size:30px;font-variant-numeric:tabular-nums}
+.clock .t.low{color:var(--danger)}
+.score{font-size:13px;color:var(--mute);font-variant-numeric:tabular-nums}
+.roster{display:flex;flex-direction:column;gap:8px;margin:0;padding:0;list-style:none}
+.roster li{display:grid;grid-template-columns:14px 1fr auto;gap:4px 8px;align-items:center}
+.roster .dot{width:12px;height:12px}
+.roster .nm{font-size:14px}
+.roster .st{font-size:12px;color:var(--mute)}
+.roster .stats{grid-column:2 / 4;font-size:12px;color:var(--mute);font-variant-numeric:tabular-nums}
+.roster li.out{opacity:.4}
+.legend{display:grid;grid-template-columns:28px 1fr;gap:6px 10px;align-items:center;margin:0}
+.legend dt{width:26px;height:26px;border-radius:2px;display:grid;place-items:center;font-family:var(--display);color:#fff;border:2px solid rgba(255,255,255,.85)}
+.legend dd{margin:0;font-size:13px;line-height:1.4}
+.legend dd small{color:var(--mute);display:block;font-size:11.5px}
+.mapinfo{font-size:12.5px;color:var(--mute);line-height:1.6}
+.pad{display:none;justify-content:space-between;align-items:center;gap:16px;padding-block:4px}
+@media (pointer:coarse){.pad{display:flex}}
+.mstat{display:none;justify-content:space-between;font-size:13px;color:var(--mute);font-variant-numeric:tabular-nums}
+.mstat b{color:var(--fg);font-family:var(--display);font-weight:400;font-size:16px}
+@media (max-width:860px){.mstat{display:flex}}
+.dpad{touch-action:none;user-select:none;-webkit-user-select:none;display:grid;grid-template-columns:repeat(3,56px);grid-template-rows:repeat(3,56px);gap:4px}
+.dpad button,.bombbtn{background:var(--panel);border:2px solid var(--line);color:var(--fg);border-radius:4px;font-size:18px;touch-action:none;user-select:none;-webkit-user-select:none}
+.dpad button.on{background:var(--dim)}
+.bombbtn{width:96px;height:96px;border-radius:50%;background:var(--accent);color:var(--bg);border-color:var(--accent);font-family:var(--display);font-size:22px}
+.bombbtn.on{filter:brightness(.85)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>迷宮風<b>ボンバー</b>風ゲーム</h1>
+    <div class="controls">
+      <label class="label" for="cpu">CPU</label>
+      <select id="cpu">
+        <option value="1">1体</option>
+        <option value="2">2体</option>
+        <option value="3" selected>3体</option>
+      </select>
+      <button class="btn" id="snd" aria-pressed="true">音 ON</button>
+      <button class="btn" id="retry">同じマップで再戦</button>
+      <button class="btn primary" id="newmap">新しいマップ</button>
+    </div>
+  </header>
+
+  <div class="seedbar">
+    <label for="seed">シード（乱数インデックス-年月日時分秒）</label>
+    <input id="seed" spellcheck="false" autocomplete="off">
+    <button class="btn" id="useseed">このシードで遊ぶ</button>
+  </div>
+
+  <div class="main">
+    <div style="display:flex;flex-direction:column;gap:10px;min-width:0">
+      <div class="mstat"><span>残り <b id="mtime">3:00</b></span><span id="malive"></span></div>
+      <div class="stage" id="stage">
+        <canvas id="cv" width="640" height="320" tabindex="0" aria-label="ゲーム画面（↑↓で前後に歩く、←→で向きを変える、スペースでボム）"></canvas>
+        <div class="overlay" id="overlay">
+          <div class="card" id="card">
+            <h2>迷宮風ボンバー風ゲーム</h2>
+            <p>ぼうけん者のカイを操作して、地下迷宮を一歩ずつ進みながら木箱を壊し、最後の1人まで生き残ろう。見えるのは目の前だけ。右のマッピングと音を頼りに。</p>
+            <p><kbd>↑</kbd><kbd>↓</kbd> / <kbd>W</kbd><kbd>S</kbd> 前進・後退　<kbd>←</kbd><kbd>→</kbd> / <kbd>A</kbd><kbd>D</kbd> 向きを変える<br><kbd>Q</kbd><kbd>E</kbd> 横歩き　<kbd>Space</kbd> / <kbd>Z</kbd> ボム設置　<kbd>R</kbd> リスタート<br>やられた後はCPUの視界で観戦できます（<kbd>←</kbd><kbd>→</kbd> で切替）。<br>スマホは画面下のパッドで操作できます。</p>
+            <div class="row"><button class="btn primary" id="start">スタート</button></div>
+          </div>
+        </div>
+      </div>
+      <div class="pad" id="pad">
+        <div class="dpad">
+          <span></span><button data-d="up" aria-label="前進">▲</button><span></span>
+          <button data-d="left" aria-label="左を向く">↶</button><span></span><button data-d="right" aria-label="右を向く">↷</button>
+          <span></span><button data-d="down" aria-label="後退">▼</button><span></span>
+        </div>
+        <button class="bombbtn" id="bombbtn">ボム</button>
+      </div>
+    </div>
+
+    <aside>
+      <div class="box">
+        <div class="clock"><span class="label">残り時間</span><span class="t" id="time">3:00</span></div>
+        <div class="score" id="score">勝ち 0 ・ 負け 0 ・ 引き分け 0</div>
+      </div>
+      <div class="box">
+        <span class="label">ぼうけん者</span>
+        <ul class="roster" id="roster"></ul>
+      </div>
+      <div class="box">
+        <span class="label">迷宮</span>
+        <div class="mapinfo" id="mapinfo"></div>
+      </div>
+      <div class="box">
+        <span class="label">アイテム（木箱の中に隠れている）</span>
+        <dl class="legend" id="legend"></dl>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script>
+(() => {
+const $ = s => document.querySelector(s);
+const cv = $('#cv'), ctx = cv.getContext('2d');
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const DIRS = {up:{dx:0,dy:-1},down:{dx:0,dy:1},left:{dx:-1,dy:0},right:{dx:1,dy:0}};
+const DLIST = [DIRS.up, DIRS.down, DIRS.left, DIRS.right];
+const dirOf = (dx,dy) => DLIST.find(d => d.dx===dx && d.dy===dy);
+const DIRNAME = d => d===DIRS.up ? '北' : d===DIRS.down ? '南' : d===DIRS.left ? '西' : '東';
+
+const ITEMS = {
+  fire:  {k:'火', name:'火力アップ', desc:'爆風が1マス伸びる', c:'#e8582a', w:30},
+  bomb:  {k:'弾', name:'ボム追加',   desc:'同時に置けるボム+1', c:'#3b4466', w:30},
+  speed: {k:'速', name:'スピード',   desc:'歩く速さが上がる',   c:'#1f9fc0', w:18},
+  kick:  {k:'蹴', name:'キック',     desc:'ボムに向かって歩くと蹴り飛ばす', c:'#7b52e6', w:9},
+  shield:{k:'盾', name:'シールド',   desc:'爆風を1回だけ防ぐ',   c:'#25a865', w:8},
+  pierce:{k:'貫', name:'貫通ボム',   desc:'爆風が木箱を貫く',     c:'#d43a72', w:5},
+};
+const CHARS = [
+  {name:'カイ', color:'#e0e0ea', glow:'#ffd84a'},
+  {name:'ミラ', color:'#3fbf7f', glow:'#c8ffe0'},
+  {name:'ゴズ', color:'#d9573b', glow:'#ffd0b0'},
+  {name:'ネロ', color:'#6a6cff', glow:'#d2d8ff'},
+];
+
+/* ---------- 音（爆発・設置・取得。見ている向きに合わせて左右に振り分ける） ---------- */
+let AC = null, soundOn = true, lastBoom = 0;
+function audio(){
+  if (!AC){ try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){ AC = null; } }
+  if (AC && AC.state === 'suspended') AC.resume().catch(()=>{});
+}
+function spatial(x,y,reach){
+  const cam = G.camv;
+  if (!cam) return {vol:1, pan:0};
+  const dx = x+.5-cam.x, dy = y+.5-cam.y, d = Math.hypot(dx,dy);
+  const lat = dx*cam.rx + dy*cam.ry;
+  return {vol: Math.max(0, 1 - d/reach), pan: Math.max(-1, Math.min(1, lat/(d+0.6)))};
+}
+function sfxOut(g, pan){
+  if (AC.createStereoPanner){ const p=AC.createStereoPanner(); p.pan.value=pan; g.connect(p); p.connect(AC.destination); }
+  else g.connect(AC.destination);
+}
+const sfxReady = () => AC && soundOn && AC.state==='running';
+function sfxBlip(x,y,f1,f2,len,vol0,type='square'){
+  if (!sfxReady()) return;
+  const {vol,pan} = x==null ? {vol:1,pan:0} : spatial(x,y,12); if (vol<=0.02) return;
+  const t=AC.currentTime, o=AC.createOscillator(), g=AC.createGain();
+  o.type=type; o.frequency.setValueAtTime(f1,t); o.frequency.exponentialRampToValueAtTime(f2,t+len);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol0*vol+0.0002,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+len);
+  o.connect(g); sfxOut(g,pan); o.start(t); o.stop(t+len+0.02);
+}
+function sfxBoom(x,y){
+  if (!sfxReady() || AC.currentTime - lastBoom < 0.05) return;
+  const {vol,pan} = spatial(x,y,18); if (vol<=0.02) return;
+  lastBoom = AC.currentTime;
+  const t=AC.currentTime, len=Math.floor(AC.sampleRate*0.55), buf=AC.createBuffer(1,len,AC.sampleRate), d=buf.getChannelData(0);
+  for (let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2);
+  const src=AC.createBufferSource(); src.buffer=buf;
+  const f=AC.createBiquadFilter(); f.type='lowpass'; f.frequency.value=650;
+  const g=AC.createGain(); g.gain.value=0.5*vol;
+  src.connect(f); f.connect(g); sfxOut(g,pan); src.start(t);
+}
+
+/* ---------- 乱数とシード ---------- */
+function stamp(d = new Date()){
+  const p = n => String(n).padStart(2,'0');
+  return d.getFullYear() + p(d.getMonth()+1) + p(d.getDate()) + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+}
+function makeSeed(){
+  const idx = String(Math.floor(Math.random()*1e6)).padStart(6,'0');
+  return idx + '-' + stamp();
+}
+function hashStr(s){
+  let h1 = 0xdeadbeef ^ s.length, h2 = 0x41c6ce57 ^ s.length;
+  for (let i = 0; i < s.length; i++){
+    const c = s.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1>>>16), 2246822507) ^ Math.imul(h2 ^ (h2>>>13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2>>>16), 2246822507) ^ Math.imul(h1 ^ (h1>>>13), 3266489909);
+  return (h2>>>0) ^ (h1>>>0);
+}
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a>>>15, 1 | a);
+    t = t + Math.imul(t ^ t>>>7, 61 | t) ^ t;
+    return ((t ^ t>>>14) >>> 0) / 4294967296;
+  };
+}
+
+/* ---------- マップ生成 ---------- */
+function genMap(seed){
+  const r = mulberry32(hashStr(seed));
+  const pick = a => a[Math.floor(r()*a.length)];
+  let W, H, shape;
+  if (r() < 0.5){ shape = '正方形'; W = H = pick([11,13,15]); }
+  else {
+    shape = '長方形'; W = pick([15,17,19]); H = pick([9,11,13]);
+    if (r() < 0.25) [W,H] = [H,W];
+  }
+  const grid = new Uint8Array(W*H);
+  const loosePillars = r() < 0.3;
+  for (let y=0;y<H;y++) for (let x=0;x<W;x++){
+    const k = x + y*W;
+    if (x===0||y===0||x===W-1||y===H-1) grid[k] = 1;
+    else if (x%2===0 && y%2===0) grid[k] = (loosePillars && r() < 0.25) ? 2 : 1;
+  }
+  const safe = new Set();
+  [[1,1,1,1],[W-2,1,-1,1],[1,H-2,1,-1],[W-2,H-2,-1,-1]].forEach(([x,y,sx,sy])=>{
+    safe.add(x+y*W); safe.add(x+sx+y*W); safe.add(x+(y+sy)*W);
+  });
+  const density = 0.55 + r()*0.2;
+  for (let k=0;k<W*H;k++) if (grid[k]===0 && !safe.has(k) && r() < density) grid[k] = 2;
+  const hidden = {};
+  const keys = Object.keys(ITEMS), total = keys.reduce((s,k)=>s+ITEMS[k].w,0);
+  for (let k=0;k<W*H;k++) if (grid[k]===2 && r() < 0.32){
+    let v = r()*total;
+    for (const key of keys){ v -= ITEMS[key].w; if (v <= 0){ hidden[k] = key; break; } }
+  }
+  const floor = 1 + Math.floor(r()*10);
+  return {W,H,shape,grid,hidden,density,loosePillars,floor};
+}
+
+/* ---------- ゲーム状態 ---------- */
+let G = null;
+const score = {win:0, lose:0, draw:0};
+
+function startRound(seed, autoplay = true){
+  const m = genMap(seed);
+  G = {seed, ...m, bombs:[], flames:new Map(), items:new Map(), pending:[], burning:[],
+       chars:[], time:180, state: autoplay ? 'count' : 'ready', cd:1.8, endT:0, result:null, clock:0, danger:null,
+       seen:new Uint8Array(m.W*m.H), vis:new Uint8Array(m.W*m.H), msg:null, cam:null, camv:null};
+  const spots = [[1,1],[m.W-2,m.H-2],[m.W-2,1],[1,m.H-2]];
+  const n = 1 + Number($('#cpu').value);
+  for (let i=0;i<n;i++){
+    const [x,y] = spots[i];
+    const face = y===1 ? DIRS.down : DIRS.up;
+    G.chars.push({id:i, ...CHARS[i], ai:i>0, x, y, tx:x, ty:y, t:0, moving:false, face, ang:Math.atan2(face.dy,face.dx),
+      speed:3.6, bombs:1, active:0, fire:2, kick:false, shield:false, pierce:false,
+      alive:true, inv:0, deathT:0, anim:0, wait:0, turnCd:0, turnPrev:null});
+  }
+  G.cam = G.chars[0];
+  $('#seed').value = seed;
+  $('#mapinfo').innerHTML = `地下${m.floor}階　${m.shape} ${m.W}×${m.H} マス<br>木箱の密度 ${Math.round(m.density*100)}%` +
+    (m.loosePillars ? '<br>一部の柱が木箱になっている' : '');
+  $('#overlay').hidden = !(G.state === 'ready');
+  held.length = 0; turnQ.length = 0; touchDir = null; bombQueued = false;
+  fit(); renderHud(true);
+  if (autoplay){ audio(); focusGame(); }
+}
+
+const idx = (x,y) => x + y*G.W;
+const inside = (x,y) => x>=0 && y>=0 && x<G.W && y<G.H;
+const bombAt = (x,y) => G.bombs.find(b => b.x===x && b.y===y);
+const occ = c => (c.moving && c.t >= 0.5) ? [c.tx,c.ty] : [c.x,c.y];
+const charAt = (x,y) => G.chars.some(c => { if(!c.alive) return false; const [ox,oy]=occ(c); return ox===x&&oy===y; });
+const walkable = (x,y) => inside(x,y) && G.grid[idx(x,y)]===0 && !bombAt(x,y) && !G.flames.has(idx(x,y));
+function say(text, t = 2.2){ G.msg = {text, t}; }
+
+// CPU用の爆風予測。先に壊れる木箱や先に消えるボムの先まで届く可能性も含めて広めに見積もる
+function blastTiles(x,y,range,pierce,goneBefore=null){
+  const out = [[x,y]];
+  for (const d of DLIST){
+    for (let i=1;i<=range;i++){
+      const nx = x+d.dx*i, ny = y+d.dy*i;
+      if (!inside(nx,ny)) break;
+      const g = G.grid[idx(nx,ny)];
+      if (g===1) break;
+      out.push([nx,ny]);
+      if (g===2 && !pierce && !(goneBefore && goneBefore(idx(nx,ny)))) break;
+    }
+  }
+  return out;
+}
+
+function computeDanger(){
+  const N = G.W*G.H;
+  let d = new Float32Array(N).fill(Infinity);
+  for (const k of G.flames.keys()) d[k] = 0;
+  const base = d.slice();
+  const bs = G.bombs.map(b => ({b, t:b.timer}));
+  for (let iter=0; iter<3; iter++){
+    const prev = d;
+    for (const A of bs) A.tiles = blastTiles(A.b.x,A.b.y,A.b.range,A.b.pierce, k => prev[k] < A.t);
+    for (let pass=0; pass<3; pass++)
+      for (const A of bs) for (const [tx,ty] of A.tiles) for (const B of bs)
+        if (B!==A && B.b.x===tx && B.b.y===ty && A.t < B.t) B.t = A.t;
+    d = base.slice();
+    for (const A of bs) for (const [tx,ty] of A.tiles){ const k=idx(tx,ty); if (A.t < d[k]) d[k] = A.t; }
+  }
+  return d;
+}
+
+function bfs(sx,sy,pass,goal,maxD=99){
+  const W=G.W, N=W*G.H, s=sx+sy*W;
+  const prev = new Int32Array(N).fill(-1), dist = new Int16Array(N).fill(-1);
+  dist[s] = 0; const q=[s]; let h=0;
+  while (h < q.length){
+    const k=q[h++], x=k%W, y=(k/W)|0;
+    if (k!==s && goal(x,y)){
+      let cur=k; while (prev[cur]!==s) cur=prev[cur];
+      const dx=cur%W-sx, dy=((cur/W)|0)-sy;
+      return {dir: DLIST.find(d=>d.dx===dx&&d.dy===dy), dist:dist[k]};
+    }
+    if (dist[k] >= maxD) continue;
+    for (const d of DLIST){
+      const nx=x+d.dx, ny=y+d.dy;
+      if (!inside(nx,ny)) continue;
+      const nk=nx+ny*W;
+      if (dist[nk]!==-1 || !pass(nx,ny,dist[k]+1)) continue;
+      dist[nk]=dist[k]+1; prev[nk]=k; q.push(nk);
+    }
+  }
+  return null;
+}
+
+/* ---------- 行動 ---------- */
+function placeBomb(c){
+  const [ox,oy] = occ(c);
+  if (c.active >= c.bombs || bombAt(ox,oy) || G.grid[idx(ox,oy)]!==0) return false;
+  G.bombs.push({x:ox, y:oy, owner:c, timer:2.6, range:c.fire, pierce:c.pierce, slide:null, st:0});
+  c.active++;
+  sfxBlip(ox,oy,320,180,0.08,0.08);
+  return true;
+}
+
+// keepFace: 後退と横歩きでは向きを変えずに動く（プレイヤーのみ）
+function tryStart(c,d,keepFace=false){
+  if (!keepFace) c.face = d;
+  const nx=c.x+d.dx, ny=c.y+d.dy;
+  if (!inside(nx,ny) || G.grid[idx(nx,ny)]!==0){
+    if (!c.ai) say(G.grid[idx(nx,ny)]===2 ? '木箱が ふさいでいる。' : 'いしの かべだ。', 0.9);
+    return false;
+  }
+  const b = bombAt(nx,ny);
+  if (b){
+    if (c.kick && !b.slide){ b.slide = d; b.st = 0; }
+    return false;
+  }
+  c.moving=true; c.tx=nx; c.ty=ny; c.t=0;
+  return true;
+}
+
+function enemyInLine(c){
+  for (const e of G.chars){
+    if (e===c || !e.alive) continue;
+    const [ex,ey] = occ(e);
+    if (ex!==c.x && ey!==c.y) continue;
+    const dist = Math.abs(ex-c.x)+Math.abs(ey-c.y);
+    if (dist===0 || dist > c.fire) continue;
+    const sx=Math.sign(ex-c.x), sy=Math.sign(ey-c.y);
+    let ok=true;
+    for (let i=1;i<dist;i++) if (G.grid[idx(c.x+sx*i,c.y+sy*i)]!==0){ ok=false; break; }
+    if (ok) return true;
+  }
+  return false;
+}
+
+// 到着するまでに爆発しない（または爆発中でない）マスだけを通る
+const timeOk = (c,k,d,t=G.danger[k]) => t===Infinity || t > (d+0.7)/c.speed || t + 0.7 < (d-0.4)/c.speed;
+
+function canEscape(c){
+  const tiles = blastTiles(c.x,c.y,c.fire,c.pierce, k => G.danger[k] < 2.6);
+  const extra = new Set(tiles.map(([x,y])=>idx(x,y)));
+  // 爆風が他のボムに届くなら、そのボムと同時に誘爆する
+  let ownT = 2.6;
+  for (const [x,y] of tiles){
+    const ob = bombAt(x,y);
+    if (!ob) continue;
+    ownT = Math.min(ownT, G.danger[idx(x,y)]);
+    // 誘爆させたボムの爆風も危険範囲に含める
+    for (const [bx,by] of blastTiles(ob.x,ob.y,ob.range,ob.pierce)) extra.add(idx(bx,by));
+  }
+  const safe = (x,y) => G.danger[idx(x,y)]===Infinity && !extra.has(idx(x,y));
+  const pass = (x,y,d) => {
+    const k = idx(x,y);
+    return walkable(x,y) && timeOk(c,k,d) && (!extra.has(k) || timeOk(c,k,d,ownT));
+  };
+  return !!bfs(c.x,c.y,pass,safe,Math.floor((ownT-0.3)*c.speed));
+}
+
+function aiDecide(c,dt){
+  const D = G.danger;
+  const isSafe = (x,y) => D[idx(x,y)]===Infinity;
+  if (!isSafe(c.x,c.y)){
+    const r = bfs(c.x,c.y,(x,y,d)=>walkable(x,y) && timeOk(c,idx(x,y),d),isSafe,30);
+    if (r) return r.dir;
+    // 安全な逃げ道がないときは、今いるマスに余裕があれば爆発が収まるのを待つ
+    if (D[idx(c.x,c.y)] > 1.0) return null;
+    const r2 = bfs(c.x,c.y,walkable,isSafe,30);
+    return r2 ? r2.dir : null;
+  }
+  if (c.wait > 0){ c.wait -= dt; return null; }
+  const adjSoft = DLIST.some(d => G.grid[idx(c.x+d.dx,c.y+d.dy)]===2);
+  if (c.active < c.bombs && !bombAt(c.x,c.y) && (adjSoft || enemyInLine(c)) && canEscape(c)){
+    placeBomb(c); return null;
+  }
+  const safeWalk = (x,y) => walkable(x,y) && isSafe(x,y);
+  if (Math.random() < 0.08){
+    const opts = DLIST.filter(d => safeWalk(c.x+d.dx,c.y+d.dy));
+    if (opts.length) return opts[Math.floor(Math.random()*opts.length)];
+  }
+  let r = bfs(c.x,c.y,safeWalk,(x,y)=>G.items.has(idx(x,y)),10);
+  if (r) return r.dir;
+  if (c.active < c.bombs){
+    r = bfs(c.x,c.y,safeWalk,(x,y)=>DLIST.some(d=>inside(x+d.dx,y+d.dy)&&G.grid[idx(x+d.dx,y+d.dy)]===2),25);
+    if (r) return r.dir;
+    const foes = G.chars.filter(e=>e!==c&&e.alive).map(occ);
+    r = bfs(c.x,c.y,safeWalk,(x,y)=>foes.some(([ex,ey])=>(ex===x&&Math.abs(ey-y)<=c.fire)||(ey===y&&Math.abs(ex-x)<=c.fire)),40);
+    if (r) return r.dir;
+  }
+  c.wait = 0.15 + Math.random()*0.3;
+  return null;
+}
+
+function explode(b){
+  G.bombs.splice(G.bombs.indexOf(b),1);
+  b.owner.active = Math.max(0, b.owner.active-1);
+  sfxBoom(b.x,b.y);
+  const lay = (x,y) => G.flames.set(idx(x,y), {t:0.55});
+  lay(b.x,b.y);
+  for (const d of DLIST){
+    for (let i=1;i<=b.range;i++){
+      const nx=b.x+d.dx*i, ny=b.y+d.dy*i;
+      if (!inside(nx,ny)) break;
+      const k = idx(nx,ny), g = G.grid[k];
+      if (g===1) break;
+      if (g===2){
+        G.grid[k]=0; G.burning.push({x:nx,y:ny,t:0.5});
+        if (G.hidden[k]){ G.pending.push({k, type:G.hidden[k], t:0.56}); delete G.hidden[k]; }
+        lay(nx,ny);
+        if (!b.pierce) break; else continue;
+      }
+      const ob = bombAt(nx,ny);
+      if (ob){ ob.timer = 0; lay(nx,ny); break; }
+      if (G.items.has(k)){ G.items.delete(k); lay(nx,ny); break; }
+      lay(nx,ny);
+    }
+  }
+}
+
+function applyItem(c,type){
+  if (type==='fire') c.fire = Math.min(c.fire+1, 8);
+  if (type==='bomb') c.bombs = Math.min(c.bombs+1, 8);
+  if (type==='speed') c.speed = Math.min(c.speed+0.6, 7.2);
+  if (type==='kick') c.kick = true;
+  if (type==='shield') c.shield = true;
+  if (type==='pierce') c.pierce = true;
+  if (!c.ai){ say(`${ITEMS[type].name} を てにいれた！`); sfxBlip(null,null,660,1320,0.18,0.07,'triangle'); }
+}
+
+/* ---------- 入力 ---------- */
+const held = [], turnQ = []; let touchDir = null, bombQueued = false;
+const KEYMAP = {ArrowUp:'up',KeyW:'up',ArrowDown:'down',KeyS:'down',ArrowLeft:'left',KeyA:'left',ArrowRight:'right',KeyD:'right',KeyQ:'sl',KeyE:'sr'};
+// キーの判定。e.code が空になる環境（日本語入力中、リモートデスクトップ、古いブラウザ）でも
+// 動くよう、e.key と keyCode からも同じ名前に直す
+const KEYNAME = {ArrowUp:'ArrowUp',Up:'ArrowUp',ArrowDown:'ArrowDown',Down:'ArrowDown',ArrowLeft:'ArrowLeft',Left:'ArrowLeft',
+  ArrowRight:'ArrowRight',Right:'ArrowRight',' ':'Space',Spacebar:'Space',Enter:'Enter'};
+const KEYCODE = {37:'ArrowLeft',38:'ArrowUp',39:'ArrowRight',40:'ArrowDown',32:'Space',13:'Enter'};
+function keyOf(e){
+  if (KEYNAME[e.key]) return KEYNAME[e.key];
+  if (e.key && e.key.length===1 && /[a-z]/i.test(e.key)) return 'Key' + e.key.toUpperCase();
+  if (e.code && e.code !== 'Unidentified') return e.code;
+  return KEYCODE[e.keyCode] || '';
+}
+const typing = el => el && (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && el.type !== 'button'));
+addEventListener('keydown', e => {
+  if (typing(e.target)) return;
+  const code = keyOf(e);
+  // CPU数の選択欄などにフォーカスが残っていても、ゲームの操作を優先する
+  if (e.target.tagName === 'SELECT' && (KEYMAP[code] || code==='Space')){ e.target.blur(); }
+  if (e.target.tagName === 'BUTTON' && (code==='Space' || code==='Enter') && G && G.state!=='ready' && $('#overlay').hidden){ e.preventDefault(); e.target.blur(); }
+  // スタート画面では Enter / Space でも始められる
+  if (G && G.state==='ready' && (code==='Enter' || code==='Space') && !$('#overlay').hidden && e.target.tagName !== 'BUTTON'){ e.preventDefault(); $('#start').click(); return; }
+  const d = KEYMAP[code];
+  if (d){
+    e.preventDefault();
+    if (!held.includes(d)) held.push(d);
+    // 向き替えは押した瞬間に1回。押しっぱなしの連続回転は update 側で行う
+    if ((d==='left' || d==='right') && !e.repeat) turnQ.push(d);
+  }
+  if (code==='Space' || code==='KeyZ' || code==='KeyX'){ e.preventDefault(); if(!e.repeat) bombQueued = true; }
+  // Rキー：同じマップで最初からやり直す（観戦中・結果画面でも使える）
+  if (code==='KeyR' && !e.repeat && !e.ctrlKey && !e.metaKey && G && G.state!=='ready'){ e.preventDefault(); startRound(G.seed); }
+}, true);
+addEventListener('keyup', e => {
+  const d = KEYMAP[keyOf(e)];
+  if (d){ const i = held.indexOf(d); if (i>=0) held.splice(i,1); }
+}, true);
+addEventListener('blur', () => { held.length = 0; });
+// ゲーム画面をクリックしたら、キー入力がゲームに届くようにフォーカスを戻す
+function focusGame(){ try { cv.focus({preventScroll:true}); } catch(e){ cv.focus(); } }
+$('#stage').addEventListener('pointerdown', e => { if (e.target === cv) focusGame(); });
+
+const isTurn = d => d==='left' || d==='right';
+const turnInput = () => isTurn(touchDir) ? touchDir : (held.filter(isTurn).pop() || null);
+// 前後・横歩きは今の向きを基準にした方向へ変換する
+function playerMove(c){
+  const k = (touchDir && !isTurn(touchDir)) ? touchDir : (held.filter(h => !isTurn(h)).pop() || null);
+  if (!k) return null;
+  const f = c.face;
+  if (k==='up') return {d:f, keep:false};
+  if (k==='down') return {d:dirOf(-f.dx,-f.dy), keep:true};
+  if (k==='sl') return {d:dirOf(f.dy,-f.dx), keep:true};
+  return {d:dirOf(-f.dy,f.dx), keep:true};
+}
+function turn(c,t){
+  const f = c.face;
+  c.face = t==='left' ? dirOf(f.dy,-f.dx) : dirOf(-f.dy,f.dx);
+}
+
+// 十字キーは指を離さずに滑らせても方向が切り替わるよう、パッド中心からの角度で判定する
+const dpad = document.querySelector('.dpad');
+let padPointer = null;
+const setPadDir = d => {
+  if (d !== touchDir && isTurn(d)) turnQ.push(d);
+  touchDir = d;
+  dpad.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.d === d));
+};
+const padDirFrom = e => {
+  const r = dpad.getBoundingClientRect();
+  const dx = e.clientX - (r.left + r.width/2), dy = e.clientY - (r.top + r.height/2);
+  if (Math.hypot(dx,dy) < 12) return touchDir;
+  return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+};
+dpad.addEventListener('pointerdown', e => {
+  e.preventDefault(); padPointer = e.pointerId;
+  dpad.setPointerCapture?.(e.pointerId);
+  setPadDir(padDirFrom(e));
+});
+dpad.addEventListener('pointermove', e => { if (e.pointerId === padPointer) setPadDir(padDirFrom(e)); });
+const padEnd = e => { if (e.pointerId === padPointer){ padPointer = null; setPadDir(null); } };
+dpad.addEventListener('pointerup', padEnd);
+dpad.addEventListener('pointercancel', padEnd);
+dpad.addEventListener('lostpointercapture', padEnd);
+dpad.addEventListener('contextmenu', e => e.preventDefault());
+const bb = $('#bombbtn');
+bb.addEventListener('pointerdown', e => { e.preventDefault(); bombQueued = true; bb.classList.add('on'); });
+bb.addEventListener('pointerup', () => bb.classList.remove('on'));
+bb.addEventListener('pointercancel', () => bb.classList.remove('on'));
+
+/* ---------- 更新 ---------- */
+function playerTurns(c,dt){
+  while (turnQ.length){ turn(c, turnQ.shift()); c.turnCd = 0.32; }
+  const ti = turnInput();
+  if (ti && ti===c.turnPrev){ c.turnCd -= dt; if (c.turnCd<=0){ turn(c,ti); c.turnCd = 0.24; } }
+  c.turnPrev = ti;
+}
+
+function updateChar(c,dt){
+  if (!c.alive){ c.deathT += dt; return; }
+  if (c.inv > 0) c.inv -= dt;
+  if (!c.ai){
+    playerTurns(c,dt);
+    if (bombQueued){ placeBomb(c); bombQueued = false; }
+  }
+  const go = () => {
+    if (c.ai){ const d = aiDecide(c,dt); return d ? tryStart(c,d) : false; }
+    const m = playerMove(c); return m ? tryStart(c,m.d,m.keep) : false;
+  };
+  if (!c.moving) go();
+  if (c.moving){
+    c.anim += dt;
+    c.t += dt*c.speed;
+    if (c.t >= 1){
+      const over = c.t-1;
+      c.x=c.tx; c.y=c.ty; c.moving=false; c.t=0;
+      if (go()) c.t = Math.min(over,0.5);
+    }
+  }
+}
+
+// 観戦するCPUを選ぶ。step=±1 で順番に切り替える
+function nextCam(from, step=1){
+  const list = G.chars.filter(c => c.alive && c.ai);
+  if (!list.length) return null;
+  const all = G.chars;
+  for (let i=1;i<=all.length;i++){
+    const c = all[((from.id + step*i) % all.length + all.length) % all.length];
+    if (list.includes(c)) return c;
+  }
+  return list[0];
+}
+
+function update(dt){
+  G.clock += dt;
+  if (G.msg){ G.msg.t -= dt; if (G.msg.t<=0) G.msg = null; }
+  // 見ている向きは90度ずつ。画面の回転は少しだけなめらかにする
+  for (const c of G.chars){
+    const tg = Math.atan2(c.face.dy,c.face.dx);
+    let d = tg - c.ang; d = Math.atan2(Math.sin(d), Math.cos(d));
+    const step = 13*dt;
+    if (reduce || Math.abs(d) <= step) c.ang = tg; else c.ang += Math.sign(d)*step;
+  }
+  if (G.state!=='play') bombQueued = false;
+  if (G.state!=='play' && G.state!=='ending') turnQ.length = 0;
+  if (G.state==='ready' || G.state==='over') return;
+  if (G.state==='count'){ G.cd -= dt; if (G.cd<=0) G.state='play'; return; }
+
+  if (G.state==='play') G.time = Math.max(0, G.time-dt);
+  G.danger = computeDanger();
+
+  for (const b of G.bombs){
+    b.timer -= dt;
+    if (G.flames.has(idx(b.x,b.y))) b.timer = 0;
+    if (b.slide){
+      b.st += dt*9;
+      while (b.st >= 1){
+        b.st -= 1;
+        const nx=b.x+b.slide.dx, ny=b.y+b.slide.dy;
+        if (!inside(nx,ny) || G.grid[idx(nx,ny)]!==0 || bombAt(nx,ny) || G.items.has(idx(nx,ny)) || charAt(nx,ny)){ b.slide=null; b.st=0; break; }
+        b.x=nx; b.y=ny;
+      }
+    }
+  }
+  let guard = 0, due;
+  while ((due = G.bombs.find(b=>b.timer<=0)) && guard++ < 64) explode(due);
+
+  for (const [k,f] of G.flames){ f.t -= dt; if (f.t<=0) G.flames.delete(k); }
+  for (const b of G.burning) b.t -= dt;
+  G.burning = G.burning.filter(b=>b.t>0);
+  for (const p of G.pending){ p.t -= dt; if (p.t<=0) G.items.set(p.k, p.type); }
+  G.pending = G.pending.filter(p=>p.t>0);
+
+  if (G.state!=='play') bombQueued = false;
+  for (const c of G.chars){
+    if (!c.ai && G.state!=='play'){ if(!c.alive) c.deathT+=dt; continue; }
+    updateChar(c,dt);
+  }
+
+  for (const c of G.chars){
+    if (!c.alive) continue;
+    const [ox,oy] = occ(c), k = idx(ox,oy);
+    if (G.items.has(k)){ applyItem(c, G.items.get(k)); G.items.delete(k); }
+    if (G.flames.has(k) && c.inv <= 0){
+      if (c.shield){ c.shield=false; c.inv=1.5; if (!c.ai) say('シールドが くだけた！'); }
+      else { c.alive=false; c.deathT=0; if (!c.ai) sfxBlip(null,null,440,70,0.7,0.09,'sawtooth'); }
+    }
+  }
+
+  // プレイヤーがやられたら、生き残っているCPUの視界に切り替えて観戦する
+  const p = G.chars[0];
+  if (!p.alive){
+    if (G.cam===p && p.deathT>0.9){ const n = nextCam(p); if (n) G.cam = n; }
+    else if (G.cam!==p && !G.cam.alive && G.cam.deathT>0.9){ const n = nextCam(G.cam); if (n) G.cam = n; }
+    while (turnQ.length){
+      const t = turnQ.shift();
+      if (G.cam!==p){ const n = nextCam(G.cam, t==='left' ? -1 : 1); if (n) G.cam = n; }
+    }
+  }
+
+  const alive = G.chars.filter(c=>c.alive);
+  if (G.state==='play'){
+    // プレイヤーが退場しても、CPUが最後の1体になるか時間切れまで試合を続ける
+    if (alive.length<=1){ G.state='ending'; G.endT=1.0; G.result = p.alive ? 'win' : 'lose'; G.winner = alive[0] || null; }
+    else if (G.time<=0){ G.state='ending'; G.endT=0.4; G.result = p.alive ? 'draw' : 'lose'; G.winner = null; }
+  } else if (G.state==='ending'){
+    G.endT -= dt;
+    if (G.endT<=0){ G.state='over'; score[G.result]++; showResult(); }
+  }
+}
+
+function showResult(){
+  const t = {win:['勝利！','カイは迷宮から生きて帰った。'], lose:['やられた…','爆風に巻き込まれた。もう一度挑戦しよう。'], draw:['時間切れ','引き分け。木箱を早めに崩すのがコツ。']}[G.result];
+  if (G.result==='lose') t[1] = G.winner ? `CPU同士の対決は${G.winner.name}が制した。` : (G.time<=0 ? 'CPU同士の対決は時間切れで決着つかず。' : 'CPUも全員ダウンした。');
+  $('#card').innerHTML = `<h2>${t[0]}</h2><p>${t[1]}</p><p><kbd>R</kbd> キーで同じマップをもう一度遊べます。</p>
+    <p class="score">シード <span style="font-family:var(--mono)">${G.seed}</span></p>
+    <div class="row"><button class="btn" id="r-retry">同じマップで再戦</button><button class="btn primary" id="r-new">新しいマップ</button></div>`;
+  $('#overlay').hidden = false;
+  $('#r-retry').onclick = () => startRound(G.seed);
+  $('#r-new').onclick = () => startRound(makeSeed());
+  $('#r-new').focus();
+  renderHud(true);
+}
+
+/* ---------- スプライト（ビルボード用の絵を先に作っておく） ---------- */
+const SP = {};
+function mk(w,h,fn){ const c=document.createElement('canvas'); c.width=w; c.height=h; fn(c.getContext('2d')); return c; }
+function buildSprites(){
+  const circ = (x,cx,cy,r) => { x.beginPath(); x.arc(cx,cy,r,0,Math.PI*2); x.fill(); };
+  const ell = (x,cx,cy,rx,ry) => { x.beginPath(); x.ellipse(cx,cy,rx,ry,0,0,Math.PI*2); x.fill(); };
+  // ぼうけん者：フードとマント、杖の先が光る
+  const adventurer = (ch, shield) => mk(64,80,x => {
+    x.strokeStyle='#8a6a42'; x.lineWidth=3; x.beginPath(); x.moveTo(53,20); x.lineTo(53,78); x.stroke();
+    x.save(); x.shadowColor=ch.glow; x.shadowBlur=10; x.fillStyle=ch.glow; circ(x,53,17,5); x.restore();
+    x.fillStyle='#1a1a24'; ell(x,24,77,7,3); ell(x,40,77,7,3);
+    x.fillStyle=ch.color; x.beginPath(); x.moveTo(20,34); x.lineTo(44,34); x.lineTo(54,76); x.lineTo(10,76); x.closePath(); x.fill();
+    x.strokeStyle='#ffffff'; x.lineWidth=1.5; x.stroke();
+    x.fillStyle='rgba(0,0,0,.28)'; x.beginPath(); x.moveTo(32,42); x.lineTo(37,76); x.lineTo(27,76); x.closePath(); x.fill();
+    x.fillStyle=ch.color; circ(x,32,26,15); x.strokeStyle='#ffffff'; x.beginPath(); x.arc(32,26,15,0,Math.PI*2); x.stroke();
+    x.fillStyle='#f3d6ae'; ell(x,32,29,9,8);
+    x.fillStyle='#1a1a24'; x.fillRect(27,27,3,4); x.fillRect(34,27,3,4);
+    if (shield){ x.strokeStyle='rgba(90,240,150,.9)'; x.lineWidth=3; x.beginPath(); x.ellipse(32,46,29,32,0,0,Math.PI*2); x.stroke(); }
+  });
+  SP.chars = CHARS.map(ch => ({base:adventurer(ch,false), shield:adventurer(ch,true)}));
+  const bomb = pierce => mk(64,64,x => {
+    x.fillStyle = pierce ? '#5a2140' : '#262b40'; circ(x,32,38,22);
+    x.strokeStyle='#ffffff'; x.lineWidth=1.5; x.beginPath(); x.arc(32,38,22,0,Math.PI*2); x.stroke();
+    if (pierce){ x.strokeStyle='#ff6fa3'; x.lineWidth=3; x.beginPath(); x.arc(32,38,17,0,Math.PI*2); x.stroke(); }
+    x.fillStyle='rgba(255,255,255,.4)'; circ(x,24,30,5);
+    x.strokeStyle='#c8b68a'; x.lineWidth=3; x.beginPath(); x.moveTo(38,18); x.quadraticCurveTo(44,8,50,10); x.stroke();
+    x.save(); x.shadowColor='#ffc93c'; x.shadowBlur=8; x.fillStyle='#ffc93c'; circ(x,51,9,5); x.restore();
+    x.fillStyle='#fff'; circ(x,51,9,2);
+  });
+  SP.bomb = bomb(false); SP.pbomb = bomb(true);
+  SP.items = {};
+  for (const [key,it] of Object.entries(ITEMS)) SP.items[key] = mk(64,64,x => {
+    x.fillStyle=it.c; x.fillRect(6,6,52,52);
+    x.strokeStyle='#ffffff'; x.lineWidth=4; x.strokeRect(6,6,52,52);
+    x.fillStyle='#fff'; x.font='34px DotGothic16, sans-serif'; x.textAlign='center'; x.textBaseline='middle'; x.fillText(it.k,32,34);
+  });
+  SP.crate = mk(64,64,x => {
+    x.fillStyle='#c98b4e'; x.fillRect(2,2,60,60);
+    x.strokeStyle='#ff9a3c'; x.lineWidth=3; x.strokeRect(3,3,58,58);
+    x.beginPath(); x.moveTo(4,4); x.lineTo(60,60); x.moveTo(60,4); x.lineTo(4,60); x.stroke();
+    x.fillStyle='rgba(255,110,30,.5)'; x.fillRect(0,0,64,64);
+  });
+  SP.flames = [0,1,2].map(f => mk(64,64,x => {
+    const r = mulberry32(77+f);
+    const g = x.createLinearGradient(0,64,0,0);
+    g.addColorStop(0,'#fff6d6'); g.addColorStop(.3,'#ffcf3c'); g.addColorStop(.7,'#ff6a2a'); g.addColorStop(1,'rgba(255,60,20,0)');
+    x.fillStyle=g;
+    for (let j=0;j<6;j++){
+      const x0 = 8 + j*9.5 + r()*4, h = 30 + r()*32;
+      x.beginPath(); x.moveTo(x0-9,64); x.quadraticCurveTo(x0-7,64-h*.6,x0+r()*6-3,64-h); x.quadraticCurveTo(x0+7,64-h*.6,x0+9,64); x.fill();
+    }
+    x.fillStyle='rgba(255,246,214,.85)'; x.beginPath(); x.ellipse(32,58,20,7,0,0,Math.PI*2); x.fill();
+  }));
+}
+buildSprites();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(buildSprites);
+
+/* ---------- 描画（一人称の迷宮ビュー） ---------- */
+// 画面は 640×320 のドット絵として描き、CSS で拡大する
+const CW = 640, CH = 320;
+const VX = 8, VY = 8, VW = 400, VH = 304;     // 迷宮ビュー
+const MX = 420, MY = 8, MW = 212, MH = 216;   // マッピング
+const TX = 420, TY = 232, TW = 212, TH = 80;  // メッセージ
+const FOC = VW/2;                            // 視野角90度
+const CXV = VX + VW/2, CYV = VY + VH/2, NEAR = 0.05;
+const zbuf = new Float32Array(VW), rFace = new Int32Array(VW), rTop = new Float32Array(VW),
+      rBot = new Float32Array(VW), rType = new Uint8Array(VW), rU = new Float32Array(VW);
+ctx.imageSmoothingEnabled = false;
+const FONT = n => `${n}px DotGothic16, sans-serif`;
+
+function rpos(c){ return c.moving ? [c.x+(c.tx-c.x)*c.t, c.y+(c.ty-c.y)*c.t] : [c.x,c.y]; }
+// 初期の3Dダンジョンと同じく、マスの後ろ寄りから前を見る
+function camera(c){
+  const [rx,ry] = rpos(c), fx = Math.cos(c.ang), fy = Math.sin(c.ang);
+  return {x: rx+.5 - fx*.45, y: ry+.5 - fy*.45, fx, fy, rx:-fy, ry:fx};
+}
+const toCam = (cam,wx,wy) => { const dx=wx-cam.x, dy=wy-cam.y; return [dx*cam.rx+dy*cam.ry, dx*cam.fx+dy*cam.fy]; };
+function clipNear(pts){
+  const out = [];
+  for (let i=0;i<pts.length;i++){
+    const a = pts[i], b = pts[(i+1)%pts.length], ain = a[1]>=NEAR, bin = b[1]>=NEAR;
+    if (ain) out.push(a);
+    if (ain!==bin){ const t=(NEAR-a[1])/(b[1]-a[1]); out.push([a[0]+(b[0]-a[0])*t, NEAR]); }
+  }
+  return out;
+}
+const floorPt = ([l,z]) => [CXV + l*FOC/z, CYV + .5*FOC/z];
+
+function castRays(cam, mark){
+  G.vis.fill(0);
+  const W = G.W, ox = Math.floor(cam.x), oy = Math.floor(cam.y);
+  if (inside(ox,oy)){ G.vis[idx(ox,oy)] = 1; if (mark) G.seen[idx(ox,oy)] = 1; }
+  for (let i=0;i<VW;i++){
+    const cx = 2*(i+.5)/VW - 1, dx = cam.fx + cam.rx*cx, dy = cam.fy + cam.ry*cx;
+    let mx = ox, my = oy;
+    const ddx = Math.abs(1/dx), ddy = Math.abs(1/dy);
+    const sx = dx<0 ? -1 : 1, sy = dy<0 ? -1 : 1;
+    let sdx = dx<0 ? (cam.x-mx)*ddx : (mx+1-cam.x)*ddx;
+    let sdy = dy<0 ? (cam.y-my)*ddy : (my+1-cam.y)*ddy;
+    let side = 0, g = 1, guard = 0;
+    while (guard++ < 64){
+      if (sdx < sdy){ sdx += ddx; mx += sx; side = 0; } else { sdy += ddy; my += sy; side = 1; }
+      if (!inside(mx,my)){ g = 1; break; }
+      const k = mx + my*W;
+      G.vis[k] = 1; if (mark) G.seen[k] = 1;
+      g = G.grid[k];
+      if (g) break;
+    }
+    const perp = Math.max(0.02, side===0 ? sdx-ddx : sdy-ddy);
+    let u = side===0 ? cam.y + perp*dy : cam.x + perp*dx; u -= Math.floor(u);
+    zbuf[i] = perp;
+    rFace[i] = ((mx + my*W)*2 + side)*2 + (side===0 ? (sx>0?1:0) : (sy>0?1:0));
+    rTop[i] = CYV - .5*FOC/perp; rBot[i] = CYV + .5*FOC/perp;
+    rType[i] = g; rU[i] = u;
+  }
+}
+
+function drawWalls(){
+  // 面の塗り（ほぼ黒）を先に、線画をあとから重ねる
+  for (let i=0;i<VW;i++){
+    const odd = rFace[i] & 2;
+    ctx.fillStyle = rType[i]===2 ? (odd ? '#2a190d' : '#21130a') : (odd ? '#0c0e1a' : '#07080f');
+    ctx.fillRect(VX+i, rTop[i], 1, rBot[i]-rTop[i]);
+  }
+  const P = {1:{top:new Path2D(), bot:new Path2D(), edge:new Path2D()}, 2:{top:new Path2D(), bot:new Path2D(), edge:new Path2D(), d1:new Path2D(), d2:new Path2D()}};
+  for (let i=0;i<VW;i++){
+    const x = VX+i+.5, p = P[rType[i]===2 ? 2 : 1], same = i>0 && rFace[i]===rFace[i-1];
+    const h = rBot[i]-rTop[i];
+    const pts = [['top',rTop[i]+.5],['bot',rBot[i]-.5]];
+    if (p.d1) pts.push(['d1',rTop[i]+rU[i]*h],['d2',rBot[i]-rU[i]*h]);
+    for (const [key,y] of pts) same ? p[key].lineTo(x,y) : p[key].moveTo(x,y);
+    if (i>0 && !same){
+      // 境目の縦線は手前の面の色で、高いほうの壁いっぱいに引く
+      const near = zbuf[i] < zbuf[i-1] ? i : i-1, e = P[rType[near]===2 ? 2 : 1].edge;
+      e.moveTo(x-.5+(near===i?.5:-.5), Math.min(rTop[i],rTop[i-1])); e.lineTo(x-.5+(near===i?.5:-.5), Math.max(rBot[i],rBot[i-1]));
+    }
+  }
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = '#e8e8f0';
+  for (const k of ['top','bot','edge']) ctx.stroke(P[1][k]);
+  ctx.strokeStyle = '#e3a35a';
+  for (const k of ['top','bot','edge','d1','d2']) ctx.stroke(P[2][k]);
+}
+
+function drawFloor(cam){
+  const grad = ctx.createLinearGradient(0,CYV,0,VY+VH);
+  grad.addColorStop(0,'#000'); grad.addColorStop(1,'#0a0d1c');
+  ctx.fillStyle = grad; ctx.fillRect(VX,CYV,VW,VH/2);
+  // 床の升目。奥行きの目安になる
+  const path = new Path2D();
+  const seg = (ax,ay,bx,by) => {
+    const pts = [toCam(cam,ax,ay), toCam(cam,bx,by)];
+    if (pts[0][1]<NEAR && pts[1][1]<NEAR) return;
+    for (let j=0;j<2;j++) if (pts[j][1]<NEAR){
+      const a=pts[j], b=pts[1-j], t=(NEAR-a[1])/(b[1]-a[1]);
+      pts[j] = [a[0]+(b[0]-a[0])*t, NEAR];
+    }
+    const [x1,y1] = floorPt(pts[0]), [x2,y2] = floorPt(pts[1]);
+    path.moveTo(x1,y1); path.lineTo(x2,y2);
+  };
+  for (let x=1;x<G.W;x++) seg(x,1,x,G.H-1);
+  for (let y=1;y<G.H;y++) seg(1,y,G.W-1,y);
+  ctx.strokeStyle = '#1e2846'; ctx.lineWidth = 1; ctx.stroke(path);
+  // 危険なマスと燃えているマスを床に塗る
+  const quad = (k,color) => {
+    const tx = k%G.W, ty = (k/G.W)|0;
+    const pts = clipNear([[tx,ty],[tx+1,ty],[tx+1,ty+1],[tx,ty+1]].map(([a,b])=>toCam(cam,a,b)));
+    if (pts.length<3) return;
+    ctx.fillStyle = color; ctx.beginPath();
+    pts.forEach((p,i) => { const [X,Y] = floorPt(p); i ? ctx.lineTo(X,Y) : ctx.moveTo(X,Y); });
+    ctx.fill();
+  };
+  if (G.danger && G.state==='play'){
+    for (let k=0;k<G.W*G.H;k++){
+      const v = G.danger[k];
+      if (v>0 && v<2.6) quad(k, `rgba(255,70,50,${0.1 + 0.35*(1-v/2.6)})`);
+    }
+  }
+  for (const k of G.flames.keys()) quad(k, 'rgba(255,120,40,.6)');
+}
+
+// ビルボードを壁の奥行き（zbuf）で列ごとに隠しながら描く
+function drawSprite(cam, s){
+  const [l,z] = toCam(cam, s.x, s.y);
+  if (z < 0.12) return;
+  const sc = FOC/z, w = s.w*sc, h = s.h*sc;
+  const x0 = VW/2 + l*sc - w/2, bottom = CYV + (.5 - (s.lift||0))*sc, top = bottom - h;
+  const c0 = Math.max(0, Math.ceil(x0)), c1 = Math.min(VW-1, Math.floor(x0+w-.001));
+  if (c1 < c0) return;
+  const iw = s.img.width, ih = s.img.height;
+  ctx.globalAlpha = s.a ?? 1;
+  let run = -1;
+  for (let c=c0; c<=c1+1; c++){
+    const ok = c<=c1 && zbuf[c] > z;
+    if (ok && run<0) run = c;
+    if (!ok && run>=0){
+      const sx = Math.max(0, (run-x0)/w*iw), sw = Math.min(iw-sx, (c-run)/w*iw);
+      if (sw > 0) ctx.drawImage(s.img, sx, 0, sw, ih, VX+run, top, c-run, h);
+      run = -1;
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawView(){
+  const cam = camera(G.cam), p = G.chars[0];
+  G.camv = cam;
+  castRays(cam, G.cam===p && p.alive);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(VX,VY,VW,VH); ctx.clip();
+  ctx.fillStyle = '#000'; ctx.fillRect(VX,VY,VW,VH);
+  drawFloor(cam);
+  drawWalls();
+  const sprites = [];
+  for (const b of G.burning) sprites.push({x:b.x+.5, y:b.y+.5, img:SP.crate, w:Math.min(1,.4+b.t*1.2), h:Math.min(1,.4+b.t*1.2)});
+  for (const [k,t] of G.items){
+    const bob = reduce ? 0 : Math.sin(G.clock*4 + k)*.03;
+    sprites.push({x:k%G.W+.5, y:((k/G.W)|0)+.5, img:SP.items[t], w:.42, h:.42, lift:.06+bob});
+  }
+  for (const b of G.bombs){
+    const pulse = reduce ? 1 : 1 + 0.07*Math.sin(G.clock*(10 + (2.6-b.timer)*6));
+    sprites.push({x:b.x+.5, y:b.y+.5, img:b.pierce ? SP.pbomb : SP.bomb, w:.5*pulse, h:.5*pulse});
+  }
+  for (const [k,f] of G.flames){
+    const life = Math.min(1, f.t/0.2), fr = SP.flames[reduce ? 0 : (Math.floor(G.clock*14) + k) % 3];
+    sprites.push({x:k%G.W+.5, y:((k/G.W)|0)+.5, img:fr, w:.95, h:.95*life, a:.9});
+  }
+  for (const c of G.chars){
+    if (c===G.cam) continue;
+    let a = 1;
+    if (!c.alive){ a = 1 - Math.min(c.deathT/0.8,1); if (a<=0) continue; }
+    if (c.inv>0 && Math.floor(c.inv*12)%2) a *= .35;
+    const [rx,ry] = rpos(c), bob = (c.moving && !reduce) ? Math.abs(Math.sin(c.anim*14))*.03 : 0;
+    const img = SP.chars[c.id][c.shield ? 'shield' : 'base'];
+    sprites.push({x:rx+.5, y:ry+.5, img, w:.62, h:.78, lift:bob + (c.alive ? 0 : (1-a)*.3), a});
+  }
+  for (const s of sprites) s.z = toCam(cam,s.x,s.y)[1];
+  sprites.sort((a,b) => b.z - a.z).forEach(s => drawSprite(cam,s));
+
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  // 足元が爆風の範囲に入っているときは、赤い枠とボムの方向で知らせる
+  if (G.cam===p && p.alive && G.danger && G.state==='play'){
+    const [ox,oy] = occ(p), t = G.danger[idx(ox,oy)];
+    if (t < Infinity){
+      let src = null, best = Infinity;
+      for (const b of G.bombs){
+        if (!blastTiles(b.x,b.y,b.range,b.pierce).some(([x,y]) => x===ox && y===oy)) continue;
+        if (b.timer < best){ best = b.timer; src = b; }
+      }
+      let where = '';
+      if (src){
+        const dx = src.x-ox, dy = src.y-oy, f = p.face;
+        const fw = dx*f.dx + dy*f.dy, lt = dx*(-f.dy) + dy*f.dx;
+        where = (!dx && !dy) ? 'あしもと' : Math.abs(fw) >= Math.abs(lt) ? (fw>0 ? 'まえ' : 'うしろ') : (lt>0 ? 'みぎ' : 'ひだり');
+      }
+      const pulse = reduce ? .8 : .55 + .45*Math.abs(Math.sin(G.clock*(t<0.9 ? 18 : 9)));
+      ctx.strokeStyle = `rgba(255,70,50,${pulse})`; ctx.lineWidth = 6; ctx.strokeRect(VX+3,VY+3,VW-6,VH-6);
+      ctx.fillStyle = 'rgba(0,0,0,.7)'; ctx.fillRect(CXV-120,VY+14,240,26);
+      ctx.fillStyle = '#ff6a5a'; ctx.font = FONT(16);
+      ctx.fillText(`キケン！ ${where ? where+'のボム ' : ''}${Math.max(0,t).toFixed(1)}`, CXV, VY+28);
+    }
+  }
+  if (G.cam===p && !p.alive){
+    ctx.fillStyle = `rgba(200,20,20,${Math.max(0, .6 - p.deathT*.6)})`; ctx.fillRect(VX,VY,VW,VH);
+  }
+  if (G.cam!==p && (G.state==='play' || G.state==='ending')){
+    ctx.fillStyle = 'rgba(0,0,0,.75)'; ctx.fillRect(VX,VY,VW,28);
+    ctx.fillStyle = '#ffd84a'; ctx.font = FONT(15);
+    const coarse = matchMedia('(pointer:coarse)').matches;
+    ctx.fillText(`観戦中：${G.cam.name}の視界　${coarse ? '◀▶で切替' : '←→で切替・Rで再戦'}`, CXV, VY+15);
+  }
+  if (G.state==='count'){
+    ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(VX,CYV-34,VW,68);
+    ctx.fillStyle = '#ffd84a'; ctx.font = FONT(44);
+    ctx.fillText(G.cd>0.6 ? 'READY' : 'GO!', CXV, CYV);
+  }
+  ctx.restore();
+}
+
+function drawMap(){
+  const W = G.W, H = G.H, p = G.chars[0];
+  const all = !p.alive || G.state==='over';   // 観戦中と試合後は迷宮全体を見せる
+  const cs = Math.floor(Math.min((MW-12)/W, (MH-12)/H));
+  const ox = MX + Math.floor((MW - cs*W)/2), oy = MY + Math.floor((MH - cs*H)/2);
+  // 方眼紙
+  ctx.strokeStyle = '#0f2a1a'; ctx.lineWidth = 1; ctx.beginPath();
+  for (let x=0;x<=W;x++){ ctx.moveTo(ox+x*cs+.5, oy); ctx.lineTo(ox+x*cs+.5, oy+H*cs); }
+  for (let y=0;y<=H;y++){ ctx.moveTo(ox, oy+y*cs+.5); ctx.lineTo(ox+W*cs, oy+y*cs+.5); }
+  ctx.stroke();
+  for (let y=0;y<H;y++) for (let x=0;x<W;x++){
+    const k = idx(x,y);
+    if (!all && !G.seen[k]) continue;
+    const g = G.grid[k];
+    ctx.fillStyle = g===1 ? '#c8c8d0' : g===2 ? '#a8693a' : (G.flames.has(k) ? '#ff7a2a' : '#141c34');
+    ctx.fillRect(ox+x*cs+1, oy+y*cs+1, cs-1, cs-1);
+    if (g===0 && G.items.has(k)){ ctx.fillStyle = ITEMS[G.items.get(k)].c; ctx.fillRect(ox+x*cs+cs*.25, oy+y*cs+cs*.25, Math.ceil(cs*.5), Math.ceil(cs*.5)); }
+  }
+  for (const b of G.bombs){
+    if (!all && !G.seen[idx(b.x,b.y)]) continue;
+    ctx.fillStyle = '#ff4040'; ctx.beginPath(); ctx.arc(ox+(b.x+.5)*cs, oy+(b.y+.5)*cs, cs*.32, 0, Math.PI*2); ctx.fill();
+  }
+  // 相手は今見えているときだけ映る
+  for (const c of G.chars){
+    if (!c.alive || c===G.cam) continue;
+    const [rx,ry] = rpos(c), k = idx(Math.round(rx),Math.round(ry));
+    if (!all && !G.vis[k]) continue;
+    ctx.fillStyle = c.color; ctx.fillRect(ox+(rx+.2)*cs, oy+(ry+.2)*cs, cs*.6, cs*.6);
+  }
+  // 自分（または観戦中のCPU）の位置と向き
+  const c = G.cam, [rx,ry] = rpos(c), a = c.ang;
+  const px = ox+(rx+.5)*cs, py = oy+(ry+.5)*cs, r = cs*.45;
+  ctx.fillStyle = '#ffd84a'; ctx.beginPath();
+  ctx.moveTo(px+Math.cos(a)*r, py+Math.sin(a)*r);
+  ctx.lineTo(px+Math.cos(a+2.4)*r, py+Math.sin(a+2.4)*r);
+  ctx.lineTo(px+Math.cos(a-2.4)*r, py+Math.sin(a-2.4)*r);
+  ctx.fill();
+}
+
+function frame(x,y,w,h){
+  ctx.strokeStyle = '#d8d8e0'; ctx.lineWidth = 1;
+  ctx.strokeRect(x-4.5,y-4.5,w+9,h+9); ctx.strokeRect(x-1.5,y-1.5,w+3,h+3);
+}
+
+function drawText(){
+  const c = G.cam, p = G.chars[0], [x,y] = occ(c);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.font = FONT(15);
+  ctx.fillStyle = '#ececf2';
+  ctx.fillText(c===p ? `地下${G.floor}階　${DIRNAME(c.face)}をむいている` : `観戦：${c.name}　${DIRNAME(c.face)}むき`, TX+6, TY+4);
+  ctx.fillStyle = '#9a9aae';
+  ctx.fillText(`X ${String(x).padStart(2,' ')}　Y ${String(y).padStart(2,' ')}　ボム ${c.bombs-c.active}/${c.bombs}`, TX+6, TY+24);
+  if (G.msg && c===p){
+    ctx.fillStyle = '#ffd84a';
+    const t = G.msg.text;
+    ctx.fillText(t.slice(0,13), TX+6, TY+46);
+    if (t.length > 13) ctx.fillText(t.slice(13,26), TX+6, TY+62);
+  }
+}
+
+function draw(){
+  ctx.fillStyle = '#000'; ctx.fillRect(0,0,CW,CH);
+  ctx.imageSmoothingEnabled = false;
+  drawView();
+  ctx.fillStyle = '#000'; ctx.fillRect(MX,MY,MW,MH); ctx.fillRect(TX,TY,TW,TH);
+  drawMap();
+  drawText();
+  frame(VX,VY,VW,VH); frame(MX,MY,MW,MH); frame(TX,TY,TW,TH);
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  if (G.paused){
+    ctx.fillStyle='rgba(0,0,0,.6)'; ctx.fillRect(0,0,CW,CH);
+    ctx.fillStyle='#ffffff'; ctx.font=FONT(22);
+    ctx.fillText('一時停止中', CW/2, CH/2 - 16);
+    ctx.font=FONT(15);
+    ctx.fillText('ゲーム画面をクリックすると再開します', CW/2, CH/2 + 16);
+  }
+}
+
+/* ---------- HUD ---------- */
+let hudT = 0;
+function renderHud(force){
+  const s = Math.ceil(G.time), t = $('#time');
+  t.textContent = `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+  t.classList.toggle('low', s<=30);
+  $('#mtime').textContent = t.textContent;
+  $('#malive').textContent = `生存 ${G.chars.filter(c=>c.alive).length} / ${G.chars.length}`;
+  $('#score').textContent = `勝ち ${score.win} ・ 負け ${score.lose} ・ 引き分け ${score.draw}`;
+  $('#roster').innerHTML = G.chars.map(c => {
+    const flags = [c.kick&&'蹴', c.shield&&'盾', c.pierce&&'貫'].filter(Boolean).join(' ');
+    const spd = Math.round((c.speed-3.6)/0.6)+1;
+    return `<li class="${c.alive?'':'out'}"><span class="dot" style="background:${c.color}"></span>
+      <span class="nm">${c.name}</span><span class="st">${c.alive ? (c.ai?'CPU':'あなた') : 'ダウン'}</span>
+      <span class="stats">火${c.fire}　弾${c.bombs}　速${spd}${flags?'　'+flags:''}</span></li>`;
+  }).join('');
+}
+$('#legend').innerHTML = Object.values(ITEMS).map(it =>
+  `<dt style="background:${it.c}">${it.k}</dt><dd>${it.name}<small>${it.desc}</small></dd>`).join('');
+
+/* ---------- サイズ ---------- */
+function fit(){
+  const st = $('#stage');
+  const w = st.clientWidth;
+  const coarse = matchMedia('(pointer:coarse)').matches;
+  const h = Math.max(160, window.innerHeight - Math.max(0, st.getBoundingClientRect().top) - (coarse ? 190 : 24));
+  const cw = Math.floor(Math.max(Math.min(w, 280), Math.min(w, h*CW/CH, 1280)));
+  cv.style.width = cw+'px'; cv.style.height = Math.round(cw*CH/CW)+'px';
+}
+addEventListener('resize', () => G && fit());
+
+/* ---------- ループ ---------- */
+let last = performance.now();
+function loop(now){
+  const dt = Math.min(0.05, (now-last)/1000); last = now;
+  if (G){
+    // ページからフォーカスが外れている間はキーが届かないので、一時停止して案内する
+    G.paused = G.state==='play' && G.chars[0].alive && !document.hasFocus();
+    if (G.paused){ held.length = 0; } else update(dt);
+    draw();
+    hudT -= dt; if (hudT<=0){ renderHud(); hudT = 0.15; }
+  }
+  requestAnimationFrame(loop);
+}
+
+$('#start').onclick = () => { audio(); focusGame(); $('#overlay').hidden = true; G.state='count'; G.cd=1.8; };
+$('#newmap').onclick = e => { e.currentTarget.blur(); startRound(makeSeed()); };
+$('#retry').onclick = e => { e.currentTarget.blur(); startRound(G.seed); };
+$('#useseed').onclick = e => { e.currentTarget.blur(); startRound($('#seed').value.trim() || makeSeed()); };
+$('#cpu').onchange = e => { e.currentTarget.blur(); startRound(G.seed); };
+$('#snd').onclick = e => { audio(); soundOn = !soundOn; e.currentTarget.textContent = soundOn ? '音 ON' : '音 OFF'; e.currentTarget.setAttribute('aria-pressed', String(soundOn)); e.currentTarget.blur(); };
+
+startRound(makeSeed(), false);
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
