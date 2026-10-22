@@ -213,36 +213,83 @@ function mulberry32(a){
 }
 
 /* ---------- すごろく盤 ----------
-   13×13 の方眼に道を引く。外周の大きな輪で4つの陣（四隅の小さな輪）がつながり、
-   各辺の中央と陣から伸びる階段道が内側の輪へ、内側の輪から4本の道が真ん中の「上がり」へ続く。
+   13×13 の方眼に道を引く。外周の大きな輪で4つの陣がつながり、外周から内側の輪へ、
+   内側の輪から4本の道が真ん中の「上がり」へ続く。シードごとに、内側の輪の大きさ・
+   陣の小さな輪のあるなし・陣から伸びる階段道の形・外周から内側への道の位置と本数が変わる。
    左上の4分の1を決めて90度ずつ回して置くので、どの陣からも同じ条件になる。 */
 const N = 13, MID = 6;
 const K = (x,y) => x + y*N;
 const XY = k => [k%N, (k/N)|0];
 const rot = (x,y) => [N-1-y, x];
 const GOAL = K(MID,MID);
-const TRACK = new Set();
-for (let i=0;i<N;i++){ TRACK.add(K(i,0)); TRACK.add(K(i,N-1)); TRACK.add(K(0,i)); TRACK.add(K(N-1,i)); }
-for (let i=4;i<=8;i++){ TRACK.add(K(i,4)); TRACK.add(K(i,8)); TRACK.add(K(4,i)); TRACK.add(K(8,i)); }
-for (let [x,y] of [[2,1],[2,2],[1,2],[3,2],[3,3],[4,3],[6,1],[6,2],[6,3],[6,5]])
-  for (let r=0;r<4;r++){ TRACK.add(K(x,y)); [x,y] = rot(x,y); }
-TRACK.add(GOAL);
-const NB = {};
-for (const k of TRACK){
-  const [x,y] = XY(k);
-  NB[k] = [[1,0],[-1,0],[0,1],[0,-1]].map(([dx,dy]) => [x+dx,y+dy])
-    .filter(([a,b]) => a>=0 && b>=0 && a<N && b<N && TRACK.has(K(a,b))).map(([a,b]) => K(a,b));
-}
+const TRACK = new Set(), NB = {}, GOAL_SPOKES = new Set();
 const orbit = k => { let [x,y] = XY(k); const o = []; for (let r=0;r<4;r++){ o.push(K(x,y)); [x,y] = rot(x,y); } return o; };
 // 手番順：あなた（左下）→ 右上 → 左上 → 右下
 const STARTS = [K(0,N-1), K(N-1,0), K(0,0), K(N-1,N-1)];
 const campOf = k => { const [x,y] = XY(k); if (!TRACK.has(k)) return -1;
   for (let i=0;i<4;i++){ const [sx,sy] = XY(STARTS[i]); if (Math.abs(x-sx)<=2 && Math.abs(y-sy)<=2) return i; } return -1; };
-const GOAL_SPOKES = new Set(NB[GOAL]);
+// これまでの固定の盤。条件に合う盤が作れなかったときに使う
+const CLASSIC = {ring:4, loop:true, stairs:[[3,2],[3,3],[4,3]], gates:[6]};
+
+function layBoard({ring, loop, stairs, gates}){
+  TRACK.clear();
+  const add = (x,y) => orbit(K(x,y)).forEach(k => TRACK.add(k));
+  for (let i=0;i<N;i++) add(i,0);
+  for (let i=ring;i<=N-1-ring;i++) add(i,ring);
+  if (loop) [[2,1],[2,2],[1,2]].forEach(([x,y]) => add(x,y));
+  stairs.forEach(([x,y]) => add(x,y));
+  for (const c of gates) for (let y=1;y<ring;y++) add(c,y);
+  for (let y=ring+1;y<MID;y++) add(MID,y);
+  TRACK.add(GOAL);
+  for (const k in NB) delete NB[k];
+  for (const k of TRACK){
+    const [x,y] = XY(k);
+    NB[k] = [[1,0],[-1,0],[0,1],[0,-1]].map(([dx,dy]) => [x+dx,y+dy])
+      .filter(([a,b]) => a>=0 && b>=0 && a<N && b<N && TRACK.has(K(a,b))).map(([a,b]) => K(a,b));
+  }
+  GOAL_SPOKES.clear(); NB[GOAL].forEach(k => GOAL_SPOKES.add(k));
+}
+
+// 道が2×2の塊にならず、全部のマスがひと続きになっていれば使える
+function boardOk(){
+  for (let y=0;y<N-1;y++) for (let x=0;x<N-1;x++)
+    if ([K(x,y),K(x+1,y),K(x,y+1),K(x+1,y+1)].every(k => TRACK.has(k))) return false;
+  const seen = new Set([GOAL]), q = [GOAL];
+  while (q.length) for (const nk of NB[q.shift()]) if (!seen.has(nk)){ seen.add(nk); q.push(nk); }
+  return seen.size === TRACK.size;
+}
+
+function genBoard(r){
+  const pick = a => a[Math.floor(r()*a.length)];
+  for (let t=0;t<30;t++){
+    const ring = pick([3,4]), loop = r() < 0.6;
+    // 陣から内側の輪の角まで、右か下にだけ進む階段道
+    const stairs = [];
+    if (r() < 0.85){
+      let [x,y] = loop ? [2,2] : [2,1];
+      if (!loop) stairs.push([x,y]);
+      const steps = [...Array(ring-x).fill([1,0]), ...Array(ring-y).fill([0,1])];
+      for (let i=steps.length-1;i>0;i--){ const j = Math.floor(r()*(i+1)); [steps[i],steps[j]] = [steps[j],steps[i]]; }
+      for (const [dx,dy] of steps){ x += dx; y += dy; stairs.push([x,y]); }
+    }
+    // 外周から内側の輪へまっすぐ下りる道（1〜2本）
+    const cols = [];
+    for (let c=ring+1;c<=N-2-ring;c++) cols.push(c);
+    const gates = [pick(cols)];
+    const rest = cols.filter(c => Math.abs(c-gates[0]) >= 2);
+    if (rest.length && r() < 0.4) gates.push(pick(rest));
+    const plan = {ring, loop, stairs, gates};
+    layBoard(plan);
+    if (boardOk()) return plan;
+  }
+  layBoard(CLASSIC);
+  return CLASSIC;
+}
 
 function genMap(seed){
   const r = mulberry32(hashStr(seed));
   const pick = a => a[Math.floor(r()*a.length)];
+  const board = genBoard(r);
   const stars = new Set(orbit(K(pick([3,4,5,8,9]),0)));
   // 陣の近く（2歩以内）は最初に動けるよう木箱を置かない
   const near = new Set(STARTS);
@@ -267,7 +314,7 @@ function genMap(seed){
       o.forEach(q => hidden.set(q, item));
     }
   }
-  return {stars, crates, hidden, density};
+  return {stars, crates, hidden, density, board};
 }
 
 /* ---------- ゲーム状態 ---------- */
@@ -290,7 +337,9 @@ function startRound(seed, autoplay = true){
   pending = null; renderActions([]);
   $('#seed').value = seed;
   $('#log').innerHTML = '';
-  $('#mapinfo').innerHTML = `木箱 ${m.crates.size}個（置かれる割合 ${Math.round(m.density*100)}%）<br>中に入っているアイテム ${m.hidden.size}個`;
+  const b = m.board;
+  $('#mapinfo').innerHTML = `盤：内側の輪 ${b.ring===3 ? '大' : '小'}・陣の輪 ${b.loop ? 'あり' : 'なし'}・階段道 ${b.stairs.length ? 'あり' : 'なし'}・外から内への道 ${b.gates.length*4}本<br>`
+    + `木箱 ${m.crates.size}個（置かれる割合 ${Math.round(m.density*100)}%）<br>中に入っているアイテム ${m.hidden.size}個`;
   showDie(0);
   setTurn(null, autoplay ? '' : 'スタートを押してください');
   renderHud();
